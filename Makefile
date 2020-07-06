@@ -52,7 +52,7 @@ govet:
 dist:	build
 
 .PHONY: build
-build: ## Build the cloud-db-factory-horizontal-scaling
+build: ## Build the cloud-db-factory-vertical-scaling
 	@echo Building Cloud-DB-Factory-Vertical-Scaling
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -gcflags all=-trimpath=$(PWD) -asmflags all=-trimpath=$(PWD) -a -installsuffix cgo -o build/_output/bin/main  ./
 
