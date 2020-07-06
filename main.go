@@ -155,7 +155,7 @@ func verticalScaling() error {
 			return errors.Wrap(err, "Failed to get DB cluster members")
 		}
 		for _, member := range clusterMembers {
-			if strings.Contains(*member.DBInstanceIdentifier, "rds-db-instance-multitenant") {
+			if strings.Contains(*member.DBInstanceIdentifier, os.Getenv("RDSMultitenantDBClusterNamePrefix")) {
 				if *member.DBInstanceIdentifier != dbInstance.DBInstanceIdentifier {
 					dbInstanceReader.DBInstanceIdentifier = *member.DBInstanceIdentifier
 				}
