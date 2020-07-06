@@ -361,19 +361,21 @@ func (d *DBInstance) waitForDBInstanceReady(ctx context.Context, client *rds.RDS
 
 			if len(databaseInstances.DBInstances) == 0 {
 				log.Error("List of DB instances empty")
-			}
-			if *databaseInstances.DBInstances[0].DBInstanceStatus != "available" {
-				shouldWait = true
-				(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
-				break
+			} else {
+				if *databaseInstances.DBInstances[0].DBInstanceStatus != "available" {
+					shouldWait = true
+					(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
+					break
+				}
+
+				if !shouldWait {
+					(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
+					log.Infof("DB instance (%s) status (%s)", d.DBInstanceIdentifier, d.DBInstanceStatus)
+					return nil
+				}
 			}
 
-			if !shouldWait {
-				(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
-				log.Infof("DB instance (%s) status (%s)", d.DBInstanceIdentifier, d.DBInstanceStatus)
-				return nil
-			}
-			time.Sleep(5 * time.Second)
+			time.Sleep(15 * time.Second)
 		}
 	}
 }
@@ -393,18 +395,20 @@ func (d *DBInstance) waitForDBInstanceStartModifications(ctx context.Context, cl
 
 			if len(databaseInstances.DBInstances) == 0 {
 				log.Error("List of DB instances empty")
-			}
-			if *databaseInstances.DBInstances[0].DBInstanceStatus == "available" {
-				shouldWait = true
-				(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
-				break
+			} else {
+				if *databaseInstances.DBInstances[0].DBInstanceStatus == "available" {
+					shouldWait = true
+					(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
+					break
+				}
+
+				if !shouldWait {
+					(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
+					log.Infof("DB instance (%s) status (%s)", d.DBInstanceIdentifier, d.DBInstanceStatus)
+					return nil
+				}
 			}
 
-			if !shouldWait {
-				(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
-				log.Infof("DB instance (%s) status (%s)", d.DBInstanceIdentifier, d.DBInstanceStatus)
-				return nil
-			}
 			time.Sleep(5 * time.Second)
 		}
 	}
