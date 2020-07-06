@@ -102,12 +102,12 @@ func main() {
 func verticalScaling() error {
 	SQSClient, RDSClient, err := getAWSClients()
 	if err != nil {
-		return errors.Wrapf(err, "Failed to initiate AWS Clients")
+		return errors.Wrap(err, "Failed to initiate AWS Clients")
 	}
 
 	message, err := getSQSMessage(SQSClient)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to receive SQS message")
+		return errors.Wrap(err, "Failed to receive SQS message")
 	}
 
 	if len(message.Messages) == 0 {
@@ -117,7 +117,7 @@ func verticalScaling() error {
 
 	sqsMessage, err := decodeSQSMessage(message)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to decode SQS message")
+		return errors.Wrap(err, "Failed to decode SQS message")
 	}
 
 	var dbInstance DBInstance
@@ -132,7 +132,7 @@ func verticalScaling() error {
 	if dbInstance.getSetDBInstanceClass() {
 		log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstance.SizeIndex])
 	} else {
-		return errors.Wrapf(err, "Existing DB instance class not in the supported list")
+		return errors.Wrap(err, "Existing DB instance class not in the supported list")
 	}
 
 	newClass, err := dbInstance.getNewClassType()
@@ -152,7 +152,7 @@ func verticalScaling() error {
 		var dbInstanceReader DBInstance
 		clusterMembers, err := dbInstance.getDBClusterMembers(RDSClient)
 		if err != nil {
-			return errors.Wrapf(err, "Failed to get DB cluster members")
+			return errors.Wrap(err, "Failed to get DB cluster members")
 		}
 		for _, member := range clusterMembers {
 			if strings.Contains(*member.DBInstanceIdentifier, "rds-db-instance-multitenant") {
@@ -170,7 +170,7 @@ func verticalScaling() error {
 		if dbInstanceReader.getSetDBInstanceClass() {
 			log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstanceReader.SizeIndex])
 		} else {
-			return errors.Wrapf(err, "Existing DB instance class not in the supported list")
+			return errors.Wrap(err, "Existing DB instance class not in the supported list")
 		}
 
 		if (dbInstance.SizeIndex + 1) > dbInstanceReader.SizeIndex {
@@ -190,7 +190,7 @@ func verticalScaling() error {
 
 	err = deleteSQSMessage(SQSClient, message)
 	if err != nil {
-		return errors.Wrapf(err, "failed tο delete SQS message")
+		return errors.Wrap(err, "failed tο delete SQS message")
 	}
 
 	err = dbInstance.sendMattermostNotification(newClass, "Vertical scaling was succesfully handled")
@@ -203,7 +203,7 @@ func verticalScaling() error {
 func getAWSClients() (*sqs.SQS, *rds.RDS, error) {
 	sess, err := session.NewSession(&aws.Config{})
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "unable to initiate AWS session")
+		return nil, nil, errors.Wrap(err, "unable to initiate AWS session")
 	}
 	return sqs.New(sess), rds.New(sess), nil
 }
@@ -212,7 +212,7 @@ func getSQSMessage(client *sqs.SQS) (*sqs.ReceiveMessageOutput, error) {
 	queueURL := os.Getenv("QueueURL")
 	message, err := client.ReceiveMessage(&sqs.ReceiveMessageInput{QueueUrl: &queueURL})
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to get SQS message")
+		return nil, errors.Wrap(err, "unable to get SQS message")
 	}
 	return message, nil
 }
@@ -222,12 +222,12 @@ func decodeSQSMessage(message *sqs.ReceiveMessageOutput) (Message, error) {
 	var sqsMessage Message
 	err := json.NewDecoder(strings.NewReader(*message.Messages[0].Body)).Decode(&sqsMessageBody)
 	if err != nil {
-		return sqsMessage, errors.Wrapf(err, "unable to decode SQS message body")
+		return sqsMessage, errors.Wrap(err, "unable to decode SQS message body")
 	}
 
 	err = json.NewDecoder(strings.NewReader(sqsMessageBody.Message)).Decode(&sqsMessage)
 	if err != nil {
-		return sqsMessage, errors.Wrapf(err, "unable to decode SQS message")
+		return sqsMessage, errors.Wrap(err, "unable to decode SQS message")
 	}
 	return sqsMessage, nil
 }
@@ -239,7 +239,7 @@ func deleteSQSMessage(client *sqs.SQS, message *sqs.ReceiveMessageOutput) error 
 		ReceiptHandle: message.Messages[0].ReceiptHandle,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "unable to delete SQS message")
+		return errors.Wrap(err, "unable to delete SQS message")
 	}
 	return nil
 }
@@ -247,11 +247,11 @@ func deleteSQSMessage(client *sqs.SQS, message *sqs.ReceiveMessageOutput) error 
 func (d *DBInstance) getDBClusterMembers(client *rds.RDS) ([]*rds.DBClusterMember, error) {
 	databaseClusters, err := client.DescribeDBClusters(&rds.DescribeDBClustersInput{DBClusterIdentifier: &d.DBClusterIdentifier})
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to describe DB Cluster")
+		return nil, errors.Wrap(err, "unable to describe DB Cluster")
 	}
 
 	if len(databaseClusters.DBClusters) == 0 {
-		return nil, errors.Wrapf(err, "list of DB Clusters empty")
+		return nil, errors.Wrap(err, "list of DB Clusters empty")
 	}
 
 	return databaseClusters.DBClusters[0].DBClusterMembers, nil
@@ -261,11 +261,11 @@ func (d *DBInstance) getDBClusterMembers(client *rds.RDS) ([]*rds.DBClusterMembe
 func (d *DBInstance) getDatabaseInfo(client *rds.RDS) error {
 	databaseInstances, err := client.DescribeDBInstances(&rds.DescribeDBInstancesInput{DBInstanceIdentifier: &d.DBInstanceIdentifier})
 	if err != nil {
-		return errors.Wrapf(err, "unable to describe DB instance")
+		return errors.Wrap(err, "unable to describe DB instance")
 	}
 
 	if len(databaseInstances.DBInstances) == 0 {
-		return errors.Wrapf(err, "list of DB instances empty")
+		return errors.Wrap(err, "list of DB instances empty")
 	}
 	(*d).DBInstanceStatus = *databaseInstances.DBInstances[0].DBInstanceStatus
 	(*d).DBInstanceClass = *databaseInstances.DBInstances[0].DBInstanceClass
@@ -273,11 +273,11 @@ func (d *DBInstance) getDatabaseInfo(client *rds.RDS) error {
 
 	databaseClusters, err := client.DescribeDBClusters(&rds.DescribeDBClustersInput{DBClusterIdentifier: &d.DBClusterIdentifier})
 	if err != nil {
-		return errors.Wrapf(err, "unable to describe the DB Cluster")
+		return errors.Wrap(err, "unable to describe the DB Cluster")
 	}
 
 	if len(databaseClusters.DBClusters) == 0 {
-		return errors.Wrapf(err, "list of DB Clusters empty")
+		return errors.Wrap(err, "list of DB Clusters empty")
 	}
 	for _, member := range databaseClusters.DBClusters[0].DBClusterMembers {
 		if *member.DBInstanceIdentifier == d.DBInstanceIdentifier {
@@ -323,7 +323,7 @@ func (d *DBInstance) changeDatabaseClass(client *rds.RDS, dbInstanceClass string
 	log.Infof("Upgrading database (%s) to class (%s)", d.DBInstanceIdentifier, dbInstanceClass)
 	_, err := client.ModifyDBInstance(modifyDBInstanceInput)
 	if err != nil {
-		return errors.Wrapf(err, "unable to upgrade database to new class")
+		return errors.Wrap(err, "unable to upgrade database to new class")
 	}
 	wait := 300
 	log.Infof("Waiting up to %d seconds for db instance to start modifications...", wait)
@@ -356,11 +356,11 @@ func (d *DBInstance) waitForDBInstanceReady(ctx context.Context, client *rds.RDS
 
 			databaseInstances, err := client.DescribeDBInstances(&rds.DescribeDBInstancesInput{DBInstanceIdentifier: &d.DBInstanceIdentifier})
 			if err != nil {
-				return errors.Wrapf(err, "unable to describe DB instance")
+				return errors.Wrap(err, "unable to describe DB instance")
 			}
 
 			if len(databaseInstances.DBInstances) == 0 {
-				return errors.Wrapf(err, "list of DB instances empty")
+				return errors.Wrap(err, "list of DB instances empty")
 			}
 			if *databaseInstances.DBInstances[0].DBInstanceStatus != "available" {
 				shouldWait = true
@@ -388,11 +388,11 @@ func (d *DBInstance) waitForDBInstanceStartModifications(ctx context.Context, cl
 
 			databaseInstances, err := client.DescribeDBInstances(&rds.DescribeDBInstancesInput{DBInstanceIdentifier: &d.DBInstanceIdentifier})
 			if err != nil {
-				return errors.Wrapf(err, "unable to describe DB instance")
+				return errors.Wrap(err, "unable to describe DB instance")
 			}
 
 			if len(databaseInstances.DBInstances) == 0 {
-				return errors.Wrapf(err, "list of DB instances empty")
+				return errors.Wrap(err, "list of DB instances empty")
 			}
 			if *databaseInstances.DBInstances[0].DBInstanceStatus == "available" {
 				shouldWait = true
@@ -416,7 +416,7 @@ func (d *DBInstance) databaseFailover(client *rds.RDS) error {
 		TargetDBInstanceIdentifier: &d.DBInstanceIdentifier,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "unable to failover DB cluster")
+		return errors.Wrap(err, "unable to failover DB cluster")
 	}
 	return nil
 }
