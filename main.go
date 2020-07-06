@@ -356,11 +356,11 @@ func (d *DBInstance) waitForDBInstanceReady(ctx context.Context, client *rds.RDS
 
 			databaseInstances, err := client.DescribeDBInstances(&rds.DescribeDBInstancesInput{DBInstanceIdentifier: &d.DBInstanceIdentifier})
 			if err != nil {
-				return errors.Wrap(err, "unable to describe DB instance")
+				log.WithError(err).Error("unable to describe DB instance")
 			}
 
 			if len(databaseInstances.DBInstances) == 0 {
-				return errors.Wrap(err, "list of DB instances empty")
+				log.Error("List of DB instances empty")
 			}
 			if *databaseInstances.DBInstances[0].DBInstanceStatus != "available" {
 				shouldWait = true
@@ -388,11 +388,11 @@ func (d *DBInstance) waitForDBInstanceStartModifications(ctx context.Context, cl
 
 			databaseInstances, err := client.DescribeDBInstances(&rds.DescribeDBInstancesInput{DBInstanceIdentifier: &d.DBInstanceIdentifier})
 			if err != nil {
-				return errors.Wrap(err, "unable to describe DB instance")
+				log.WithError(err).Error("unable to describe DB instance")
 			}
 
 			if len(databaseInstances.DBInstances) == 0 {
-				return errors.Wrap(err, "list of DB instances empty")
+				log.Error("List of DB instances empty")
 			}
 			if *databaseInstances.DBInstances[0].DBInstanceStatus == "available" {
 				shouldWait = true
