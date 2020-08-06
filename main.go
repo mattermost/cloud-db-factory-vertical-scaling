@@ -17,7 +17,7 @@ import (
 
 // DBInstanceClasses is used to store the available DB Instance Classes. The classes are specified with size order.
 var DBInstanceClasses = []string{
-	"db.t3.small",
+	"db.t3.medium",
 	"db.r5.large",
 	"db.r5.xlarge",
 	"db.r5.2xlarge",
