@@ -36,6 +36,7 @@ func (d *DBInstance) sendMattermostNotification(class string, message string) er
 			{Title: "DBClusterIdentifier", Value: d.DBClusterIdentifier, Short: true},
 			{Title: "UpgradedDBClass", Value: class, Short: true},
 			{Title: "IsClusterWriter", Value: strconv.FormatBool(d.IsClusterWriter), Short: true},
+			{Title: "Environment", Value: os.Getenv("Environment"), Short: true},
 		},
 	}
 
@@ -57,6 +58,7 @@ func sendMattermostErrorNotification(errorMessage error, message string) error {
 		Fields: []*model.SlackAttachmentField{
 			{Title: message, Short: false},
 			{Title: "Error Message", Value: errorMessage.Error(), Short: false},
+			{Title: "Environment", Value: os.Getenv("Environment"), Short: true},
 		},
 	}
 
