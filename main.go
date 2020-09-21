@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/rds"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/pkg/errors"
@@ -27,6 +29,21 @@ var DBInstanceClasses = []string{
 	"db.r5.16xlarge",
 	"db.r5.24xlarge",
 }
+
+// DBInstanceClassMemory maps DB instance types with their memory (bytes)
+var DBInstanceClassMemory = map[string]string{
+	"db.t3.medium":   "4294967296",
+	"db.r5.large":    "17179869184",
+	"db.r5.xlarge":   "34359738368",
+	"db.r5.2xlarge":  "68719476736",
+	"db.r5.4xlarge":  "137438953472",
+	"db.r5.8xlarge":  "274877906944",
+	"db.r5.12xlarge": "412316860416",
+	"db.r5.16xlarge": "549755813888",
+	"db.r5.24xlarge": "824633720832",
+}
+
+var memoryCacheProportion = "0.75"
 
 // SQSMessageBody is used to decode the SQS Message Body
 type SQSMessageBody struct {
@@ -100,7 +117,7 @@ func main() {
 }
 
 func verticalScaling() error {
-	SQSClient, RDSClient, err := getAWSClients()
+	SQSClient, RDSClient, cloudwatchClient, err := getAWSClients()
 	if err != nil {
 		return errors.Wrap(err, "Failed to initiate AWS Clients")
 	}
@@ -147,6 +164,13 @@ func verticalScaling() error {
 		if err != nil {
 			return errors.Wrapf(err, "Failed to change DB Instance (%s) class", dbInstance.DBInstanceIdentifier)
 		}
+
+		alarmName := fmt.Sprintf("%s-memory", dbInstance.DBInstanceIdentifier)
+		log.Infof("Updating Cloudwatch alarm (%s) with new metric", alarmName)
+		err = updateMemoryAlarm(cloudwatchClient, alarmName, newClass)
+		if err != nil {
+			return errors.Wrapf(err, "Failed to update Cloudwatch alarm (%s)", alarmName)
+		}
 	} else {
 		log.Infof("DB instance (%s) is a writer with instance class (%s). Getting first available reader", dbInstance.DBInstanceIdentifier, dbInstance.DBInstanceClass)
 		var dbInstanceReader DBInstance
@@ -185,7 +209,15 @@ func verticalScaling() error {
 		if err != nil {
 			return errors.Wrapf(err, "Failed to failover DB instance (%s)", dbInstanceReader.DBInstanceIdentifier)
 		}
+
+		alarmName := fmt.Sprintf("%s-memory", dbInstanceReader.DBInstanceIdentifier)
+		log.Infof("Updating Cloudwatch alarm (%s) with new metric", alarmName)
+		err = updateMemoryAlarm(cloudwatchClient, alarmName, newClass)
+		if err != nil {
+			return errors.Wrapf(err, "Failed to update Cloudwatch alarm (%s)", alarmName)
+		}
 	}
+
 	log.Info("Vertical scaling was successfully handled, deleting SQS message")
 
 	err = deleteSQSMessage(SQSClient, message)
@@ -200,12 +232,52 @@ func verticalScaling() error {
 	return nil
 }
 
-func getAWSClients() (*sqs.SQS, *rds.RDS, error) {
+func updateMemoryAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string) error {
+	alarm, err := getExistingAlarm(client, alarmName, instanceClass)
+	if err != nil {
+		return errors.Wrap(err, "Failed to get existing Cloudwatch alarm")
+	}
+	_, err = client.PutMetricAlarm(&cloudwatch.PutMetricAlarmInput{
+		AlarmName:          aws.String(alarmName),
+		Metrics:            alarm.Metrics,
+		EvaluationPeriods:  alarm.EvaluationPeriods,
+		ComparisonOperator: alarm.ComparisonOperator,
+		Threshold:          alarm.Threshold,
+	})
+	if err != nil {
+		return errors.Wrap(err, "Failed to update Cloudwatch alarm metric")
+	}
+	return nil
+}
+
+func getExistingAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string) (*cloudwatch.MetricAlarm, error) {
+	alarms, err := client.DescribeAlarms(&cloudwatch.DescribeAlarmsInput{
+		AlarmNames: []*string{&alarmName},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to describe Cloudwatch alarms")
+	}
+	if len(alarms.MetricAlarms) > 0 {
+		for _, metricAlarm := range alarms.MetricAlarms {
+			if len(metricAlarm.Metrics) > 0 {
+				for index, metric := range metricAlarm.Metrics {
+					if *metric.Id == "e1" {
+						metricAlarm.Metrics[index].Expression = aws.String(fmt.Sprintf("m1 + %s*%s", memoryCacheProportion, DBInstanceClassMemory[instanceClass]))
+					}
+				}
+				return metricAlarm, nil
+			}
+		}
+	}
+	return nil, errors.Errorf("Failed to get existing alarms")
+}
+
+func getAWSClients() (*sqs.SQS, *rds.RDS, *cloudwatch.CloudWatch, error) {
 	sess, err := session.NewSession(&aws.Config{})
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "unable to initiate AWS session")
+		return nil, nil, nil, errors.Wrap(err, "unable to initiate AWS session")
 	}
-	return sqs.New(sess), rds.New(sess), nil
+	return sqs.New(sess), rds.New(sess), cloudwatch.New(sess), nil
 }
 
 func getSQSMessage(client *sqs.SQS) (*sqs.ReceiveMessageOutput, error) {
