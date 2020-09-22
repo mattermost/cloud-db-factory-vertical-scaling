@@ -233,39 +233,41 @@ func verticalScaling() error {
 }
 
 func updateMemoryAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string) error {
-	alarm, err := getExistingAlarm(client, alarmName, instanceClass)
-	if err != nil {
-		return errors.Wrap(err, "Failed to get existing Cloudwatch alarm")
-	}
-	_, err = client.PutMetricAlarm(&cloudwatch.PutMetricAlarmInput{
-		AlarmName:          aws.String(alarmName),
-		Metrics:            alarm.Metrics,
-		EvaluationPeriods:  alarm.EvaluationPeriods,
-		ComparisonOperator: alarm.ComparisonOperator,
-		Threshold:          alarm.Threshold,
-	})
-	if err != nil {
-		return errors.Wrap(err, "Failed to update Cloudwatch alarm metric")
-	}
-	return nil
-}
-
-func getExistingAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string) (*cloudwatch.MetricAlarm, error) {
 	alarms, err := client.DescribeAlarms(&cloudwatch.DescribeAlarmsInput{
 		AlarmNames: []*string{&alarmName},
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed to describe Cloudwatch alarms")
+		return errors.Wrap(err, "Failed to describe Cloudwatch alarms")
 	}
+
+	newAlarm, err := updateAlarmMetric(alarms, instanceClass)
+	if err != nil {
+		return errors.Wrap(err, "Failed to set data to new Cloudwatch alarm")
+	}
+
+	_, err = client.PutMetricAlarm(&cloudwatch.PutMetricAlarmInput{
+		AlarmName:          aws.String(alarmName),
+		Metrics:            newAlarm.Metrics,
+		EvaluationPeriods:  newAlarm.EvaluationPeriods,
+		ComparisonOperator: newAlarm.ComparisonOperator,
+		Threshold:          newAlarm.Threshold,
+	})
+	if err != nil {
+		return errors.Wrap(err, "Failed to update Cloudwatch alarm")
+	}
+	return nil
+}
+
+func updateAlarmMetric(alarms *cloudwatch.DescribeAlarmsOutput, instanceClass string) (*cloudwatch.MetricAlarm, error) {
 	if len(alarms.MetricAlarms) > 0 {
 		for _, metricAlarm := range alarms.MetricAlarms {
 			if len(metricAlarm.Metrics) > 0 {
 				for index, metric := range metricAlarm.Metrics {
 					if *metric.Id == "e1" {
 						metricAlarm.Metrics[index].Expression = aws.String(fmt.Sprintf("m1 + %s*%s", memoryCacheProportion, DBInstanceClassMemory[instanceClass]))
+						return metricAlarm, nil
 					}
 				}
-				return metricAlarm, nil
 			}
 		}
 	}
