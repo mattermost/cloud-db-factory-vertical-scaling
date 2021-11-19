@@ -1,6 +1,6 @@
 # Build the cloud db factory vertical scaling
 ARG DOCKER_BUILD_IMAGE=golang:1.17.0
-ARG DOCKER_BASE_IMAGE=alpine:3.12
+ARG DOCKER_BASE_IMAGE=alpine:3.14
 
 FROM ${DOCKER_BUILD_IMAGE} AS build
 WORKDIR /cloud-db-factory-vertical-scaling/
