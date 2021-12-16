@@ -416,14 +416,14 @@ func (d *DBInstance) getNewClassType() (string, error) {
 		}
 		log.Infof("New DB Graviton instance class (%s)", newClass)
 		return newClass, nil
-	} else {
-		newClass, err := d.increaseSize()
-		if err != nil {
-			return "", err
-		}
-		log.Infof("New DB instance class (%s)", newClass)
-		return newClass, nil
 	}
+	newClass, err := d.increaseSize()
+	if err != nil {
+		return "", err
+	}
+	log.Infof("New DB instance class (%s)", newClass)
+	return newClass, nil
+
 }
 
 func (d *DBInstance) getSetDBInstanceClass() bool {
