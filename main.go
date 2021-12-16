@@ -20,6 +20,7 @@ import (
 // DBInstanceClasses is used to store the available DB Instance Classes. The classes are specified with size order.
 var DBInstanceClasses = []string{
 	"db.t3.medium",
+	"db.t3.large",
 	"db.r5.large",
 	"db.r5.xlarge",
 	"db.r5.2xlarge",
@@ -33,6 +34,7 @@ var DBInstanceClasses = []string{
 // DBInstanceClassMemory maps DB instance types with their memory (bytes)
 var DBInstanceClassMemory = map[string]string{
 	"db.t3.medium":   "4294967296",
+	"db.t3.large":    "8589934592",
 	"db.r5.large":    "17179869184",
 	"db.r5.xlarge":   "34359738368",
 	"db.r5.2xlarge":  "68719476736",
@@ -41,6 +43,36 @@ var DBInstanceClassMemory = map[string]string{
 	"db.r5.12xlarge": "412316860416",
 	"db.r5.16xlarge": "549755813888",
 	"db.r5.24xlarge": "824633720832",
+}
+
+// DBInstanceGravitonClasses is used to store the available DB Graviton Instance Classes. The classes are specified with size order.
+var DBInstanceGravitonClasses = []string{
+	"db.t4g.small",
+	"db.t4g.medium",
+	"db.t4g.large",
+	"db.r6g.large",
+	"db.r6g.xlarge",
+	"db.r6g.2xlarge",
+	"db.r6g.4xlarge",
+	"db.r6g.8xlarge",
+	"db.r6g.12xlarge",
+	"db.r6g.16xlarge",
+	"db.r6g.24xlarge",
+}
+
+// DBInstanceGravitonClassMemory maps DB Graviton instance types with their memory (bytes)
+var DBInstanceGravitonClassMemory = map[string]string{
+	"db.t4g.small":    "2147483648",
+	"db.t4g.medium":   "4294967296",
+	"db.t4g.large":    "8589934592",
+	"db.r6g.large":    "17179869184",
+	"db.r6g.xlarge":   "34359738368",
+	"db.r6g.2xlarge":  "68719476736",
+	"db.r6g.4xlarge":  "137438953472",
+	"db.r6g.8xlarge":  "274877906944",
+	"db.r6g.12xlarge": "412316860416",
+	"db.r6g.16xlarge": "549755813888",
+	"db.r6g.24xlarge": "824633720832",
 }
 
 var memoryCacheProportion = "0.75"
@@ -103,6 +135,7 @@ type DBInstance struct {
 	DBInstanceIdentifier string `json:"dbInstanceIdentifier"`
 	DBClusterIdentifier  string `json:"dbClusterIdentifier"`
 	IsClusterWriter      bool   `json:"isClusterWriter"`
+	IsArm                bool   `json:"isArm"`
 }
 
 func main() {
@@ -146,10 +179,16 @@ func verticalScaling() error {
 		return errors.Wrapf(err, "Failed to obtain DB instance (%s) information", dbInstance.DBInstanceIdentifier)
 	}
 
+	IsArm := strings.Contains(dbInstance.DBInstanceClass, "g.")
+
 	if dbInstance.getSetDBInstanceClass() {
-		log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstance.SizeIndex])
+		if IsArm {
+			log.Infof("Current DB instance class (%s)", DBInstanceGravitonClasses[dbInstance.SizeIndex])
+		} else {
+			log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstance.SizeIndex])
+		}
 	} else {
-		return errors.Wrap(err, "Existing DB instance class not in the supported list")
+		return errors.Wrap(err, "Existing DB instance class not in the supported lists")
 	}
 
 	newClass, err := dbInstance.getNewClassType()
@@ -167,7 +206,7 @@ func verticalScaling() error {
 
 		alarmName := fmt.Sprintf("%s-memory", dbInstance.DBInstanceIdentifier)
 		log.Infof("Updating Cloudwatch alarm (%s) with new metric", alarmName)
-		err = updateMemoryAlarm(cloudwatchClient, alarmName, newClass)
+		err = updateMemoryAlarm(cloudwatchClient, alarmName, newClass, dbInstance)
 		if err != nil {
 			return errors.Wrapf(err, "Failed to update Cloudwatch alarm (%s)", alarmName)
 		}
@@ -192,7 +231,11 @@ func verticalScaling() error {
 		}
 
 		if dbInstanceReader.getSetDBInstanceClass() {
-			log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstanceReader.SizeIndex])
+			if IsArm {
+				log.Infof("Current DB instance class (%s)", DBInstanceGravitonClasses[dbInstanceReader.SizeIndex])
+			} else {
+				log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstanceReader.SizeIndex])
+			}
 		} else {
 			return errors.Wrap(err, "Existing DB instance class not in the supported list")
 		}
@@ -212,7 +255,7 @@ func verticalScaling() error {
 
 		alarmName := fmt.Sprintf("%s-memory", dbInstanceReader.DBInstanceIdentifier)
 		log.Infof("Updating Cloudwatch alarm (%s) with new metric", alarmName)
-		err = updateMemoryAlarm(cloudwatchClient, alarmName, newClass)
+		err = updateMemoryAlarm(cloudwatchClient, alarmName, newClass, dbInstance)
 		if err != nil {
 			return errors.Wrapf(err, "Failed to update Cloudwatch alarm (%s)", alarmName)
 		}
@@ -232,7 +275,7 @@ func verticalScaling() error {
 	return nil
 }
 
-func updateMemoryAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string) error {
+func updateMemoryAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string, dbInstance DBInstance) error {
 	alarms, err := client.DescribeAlarms(&cloudwatch.DescribeAlarmsInput{
 		AlarmNames: []*string{&alarmName},
 	})
@@ -240,7 +283,7 @@ func updateMemoryAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass s
 		return errors.Wrap(err, "Failed to describe Cloudwatch alarms")
 	}
 
-	newAlarm, err := updateAlarmMetric(alarms, instanceClass)
+	newAlarm, err := updateAlarmMetric(alarms, instanceClass, dbInstance)
 	if err != nil {
 		return errors.Wrap(err, "Failed to set data to new Cloudwatch alarm")
 	}
@@ -258,12 +301,16 @@ func updateMemoryAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass s
 	return nil
 }
 
-func updateAlarmMetric(alarms *cloudwatch.DescribeAlarmsOutput, instanceClass string) (*cloudwatch.MetricAlarm, error) {
+func updateAlarmMetric(alarms *cloudwatch.DescribeAlarmsOutput, instanceClass string, dbInstance DBInstance) (*cloudwatch.MetricAlarm, error) {
 	if len(alarms.MetricAlarms) > 0 {
 		for _, metricAlarm := range alarms.MetricAlarms {
 			if len(metricAlarm.Metrics) > 0 {
 				for index, metric := range metricAlarm.Metrics {
 					if *metric.Id == "e1" {
+						if dbInstance.IsArm {
+							metricAlarm.Metrics[index].Expression = aws.String(fmt.Sprintf("m1 + %s*%s", memoryCacheProportion, DBInstanceGravitonClassMemory[instanceClass]))
+							return metricAlarm, nil
+						}
 						metricAlarm.Metrics[index].Expression = aws.String(fmt.Sprintf("m1 + %s*%s", memoryCacheProportion, DBInstanceClassMemory[instanceClass]))
 						return metricAlarm, nil
 					}
@@ -362,16 +409,31 @@ func (d *DBInstance) getDatabaseInfo(client *rds.RDS) error {
 }
 
 func (d *DBInstance) getNewClassType() (string, error) {
-	newClass, err := d.increaseSize()
-	if err != nil {
-		return "", err
+	if d.isArm() {
+		newClass, err := d.increaseSizeArm()
+		if err != nil {
+			return "", err
+		}
+		log.Infof("New DB Graviton instance class (%s)", newClass)
+		return newClass, nil
+	} else {
+		newClass, err := d.increaseSize()
+		if err != nil {
+			return "", err
+		}
+		log.Infof("New DB instance class (%s)", newClass)
+		return newClass, nil
 	}
-	log.Infof("New DB instance class (%s)", newClass)
-	return newClass, nil
 }
 
 func (d *DBInstance) getSetDBInstanceClass() bool {
-	for i, dbClass := range DBInstanceClasses {
+	var instancesRange []string
+	if d.isArm() {
+		instancesRange = DBInstanceGravitonClasses
+	} else {
+		instancesRange = DBInstanceClasses
+	}
+	for i, dbClass := range instancesRange {
 		if d.DBInstanceClass == dbClass {
 			(*d).SizeIndex = i
 			return true
@@ -386,6 +448,14 @@ func (d DBInstance) increaseSize() (string, error) {
 		return "", errors.Errorf("Maximum instance size used. Index out of range")
 	}
 	return DBInstanceClasses[newIndex], nil
+}
+
+func (d DBInstance) increaseSizeArm() (string, error) {
+	newIndex := d.SizeIndex + 1
+	if (newIndex + 1) >= len(DBInstanceGravitonClasses) {
+		return "", errors.Errorf("Maximum instance size used. Index out of range")
+	}
+	return DBInstanceGravitonClasses[newIndex], nil
 }
 
 func (d *DBInstance) changeDatabaseClass(client *rds.RDS, dbInstanceClass string) error {
@@ -497,4 +567,10 @@ func (d *DBInstance) databaseFailover(client *rds.RDS) error {
 		return errors.Wrap(err, "unable to failover DB cluster")
 	}
 	return nil
+}
+
+// Helper function which returns true when the instance is ARM architecture. Also sets IsArm value of the DBInstance.
+func (d *DBInstance) isArm() bool {
+	d.IsArm = strings.Contains(d.DBInstanceClass, "g.")
+	return d.IsArm
 }
