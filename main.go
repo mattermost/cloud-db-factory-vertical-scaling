@@ -20,6 +20,7 @@ import (
 // DBInstanceClasses is used to store the available DB Instance Classes. The classes are specified with size order.
 var DBInstanceClasses = []string{
 	"db.t3.medium",
+	"db.t3.large",
 	"db.r5.large",
 	"db.r5.xlarge",
 	"db.r5.2xlarge",
@@ -33,6 +34,7 @@ var DBInstanceClasses = []string{
 // DBInstanceClassMemory maps DB instance types with their memory (bytes)
 var DBInstanceClassMemory = map[string]string{
 	"db.t3.medium":   "4294967296",
+	"db.t3.large":    "8589934592",
 	"db.r5.large":    "17179869184",
 	"db.r5.xlarge":   "34359738368",
 	"db.r5.2xlarge":  "68719476736",
@@ -45,7 +47,9 @@ var DBInstanceClassMemory = map[string]string{
 
 // DBInstanceGravitonClasses is used to store the available DB Graviton Instance Classes. The classes are specified with size order.
 var DBInstanceGravitonClasses = []string{
+	"db.t4g.small",
 	"db.t4g.medium",
+	"db.t4g.large",
 	"db.r6g.large",
 	"db.r6g.xlarge",
 	"db.r6g.2xlarge",
@@ -58,7 +62,9 @@ var DBInstanceGravitonClasses = []string{
 
 // DBInstanceGravitonClassMemory maps DB Graviton instance types with their memory (bytes)
 var DBInstanceGravitonClassMemory = map[string]string{
+	"db.t4g.small":    "2147483648",
 	"db.t4g.medium":   "4294967296",
+	"db.t4g.large":    "8589934592",
 	"db.r6g.large":    "17179869184",
 	"db.r6g.xlarge":   "34359738368",
 	"db.r6g.2xlarge":  "68719476736",
@@ -173,8 +179,14 @@ func verticalScaling() error {
 		return errors.Wrapf(err, "Failed to obtain DB instance (%s) information", dbInstance.DBInstanceIdentifier)
 	}
 
+	IsArm := strings.Contains(dbInstance.DBInstanceClass, "g.")
+
 	if dbInstance.getSetDBInstanceClass() {
-		log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstance.SizeIndex])
+		if IsArm {
+			log.Infof("Current DB instance class (%s)", DBInstanceGravitonClasses[dbInstance.SizeIndex])
+		} else {
+			log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstance.SizeIndex])
+		}
 	} else {
 		return errors.Wrap(err, "Existing DB instance class not in the supported lists")
 	}
@@ -219,7 +231,11 @@ func verticalScaling() error {
 		}
 
 		if dbInstanceReader.getSetDBInstanceClass() {
-			log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstanceReader.SizeIndex])
+			if IsArm {
+				log.Infof("Current DB instance class (%s)", DBInstanceGravitonClasses[dbInstanceReader.SizeIndex])
+			} else {
+				log.Infof("Current DB instance class (%s)", DBInstanceClasses[dbInstanceReader.SizeIndex])
+			}
 		} else {
 			return errors.Wrap(err, "Existing DB instance class not in the supported list")
 		}
@@ -393,25 +409,29 @@ func (d *DBInstance) getDatabaseInfo(client *rds.RDS) error {
 }
 
 func (d *DBInstance) getNewClassType() (string, error) {
-	if d.IsArm {
+	if d.isArm() {
 		newClass, err := d.increaseSizeArm()
 		if err != nil {
 			return "", err
 		}
 		log.Infof("New DB Graviton instance class (%s)", newClass)
+		return newClass, nil
+	} else {
+		newClass, err := d.increaseSize()
+		if err != nil {
+			return "", err
+		}
+		log.Infof("New DB instance class (%s)", newClass)
+		return newClass, nil
 	}
-	newClass, err := d.increaseSize()
-	if err != nil {
-		return "", err
-	}
-	log.Infof("New DB instance class (%s)", newClass)
-	return newClass, nil
 }
 
 func (d *DBInstance) getSetDBInstanceClass() bool {
-	instancesRange := DBInstanceClasses
-	if d.IsArm {
+	var instancesRange []string
+	if d.isArm() {
 		instancesRange = DBInstanceGravitonClasses
+	} else {
+		instancesRange = DBInstanceClasses
 	}
 	for i, dbClass := range instancesRange {
 		if d.DBInstanceClass == dbClass {
