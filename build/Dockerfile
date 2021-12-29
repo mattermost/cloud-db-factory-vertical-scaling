@@ -15,7 +15,6 @@ LABEL name="Mattermost Cloud Database Factory Vertical Scaling" \
   maintainer="cloud-team@mattermost.com" \
   vendor="Mattermost" \
   distribution-scope="public" \
-  architecture="x86_64" \
   url="https://mattermost.com" \
   io.k8s.description="Mattermost Cloud Database Factory Vertical Scaling is responsible for RDS cluster scaling" \
   io.k8s.display-name="Mattermost Cloud Database Factory"

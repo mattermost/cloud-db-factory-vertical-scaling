@@ -51,19 +51,34 @@ govet:
 .PHONY: dist
 dist:	build
 
+.PHONY: binaries
+binaries: ## Build binaries of cloud-db-factory-vertical-scaling
+	@echo Building binaries of Cloud-DB-Factory-Vertical-Scaling
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -gcflags all=-trimpath=$(PWD) -asmflags all=-trimpath=$(PWD) -a -installsuffix cgo -o build/_output/bin/cloud-db-factory-vertical-scaling-linux-amd64  ./
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build -gcflags all=-trimpath=$(PWD) -asmflags all=-trimpath=$(PWD) -a -installsuffix cgo -o build/_output/bin/cloud-db-factory-vertical-scaling-darwin-amd64  ./
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -gcflags all=-trimpath=$(PWD) -asmflags all=-trimpath=$(PWD) -a -installsuffix cgo -o build/_output/bin/cloud-db-factory-vertical-scaling-linux-arm64  ./
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GO) build -gcflags all=-trimpath=$(PWD) -asmflags all=-trimpath=$(PWD) -a -installsuffix cgo -o build/_output/bin/cloud-db-factory-vertical-scaling-darwin-arm64  ./
+
 .PHONY: build
-build: ## Build the cloud-db-factory-vertical-scaling
+build:
 	@echo Building Cloud-DB-Factory-Vertical-Scaling
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -gcflags all=-trimpath=$(PWD) -asmflags all=-trimpath=$(PWD) -a -installsuffix cgo -o build/_output/bin/main  ./
+	GOOS=linux CGO_ENABLED=0 $(GO) build -gcflags all=-trimpath=$(PWD) -asmflags all=-trimpath=$(PWD) -a -installsuffix cgo -o build/_output/bin/main  ./
 
 build-image:  ## Build the docker image for cloud-db-factory-vertical-scaling
 	@echo Building Cloud-DB-Factory-Vertical-Scaling Docker Image
-	docker build \
+	docker buildx build \
+	--platform linux/arm64,linux/amd64 \
 	--build-arg DOCKER_BUILD_IMAGE=$(DOCKER_BUILD_IMAGE) \
 	--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
 	. -f build/Dockerfile -t $(CLOUD_DB_FACTORY_VERTICAL_SCALING_IMAGE) \
-	--no-cache
+	--no-cache \
+	--push
 
 .PHONY: install
 install: build
 	go install ./...
+
+.PHONY: release
+release:
+	@echo Cut a release
+	sh ./scripts/release.sh
