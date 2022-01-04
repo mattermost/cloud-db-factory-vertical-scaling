@@ -64,6 +64,7 @@ build:
 	@echo Building Cloud-DB-Factory-Vertical-Scaling
 	GOOS=linux CGO_ENABLED=0 $(GO) build -gcflags all=-trimpath=$(PWD) -asmflags all=-trimpath=$(PWD) -a -installsuffix cgo -o build/_output/bin/main  ./
 
+.PHONY: build-image
 build-image:  ## Build the docker image for cloud-db-factory-vertical-scaling
 	@echo Building Cloud-DB-Factory-Vertical-Scaling Docker Image
 	docker buildx build \
@@ -74,6 +75,30 @@ build-image:  ## Build the docker image for cloud-db-factory-vertical-scaling
 	--no-cache \
 	--push
 
+.PHONY: push-image-pr
+push-image-pr:
+	set -e
+	set -u
+	export TAG="${CIRCLE_SHA1:0:7}"
+	echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
+	docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$TAG
+	docker push mattermost/cloud-db-factory-vertical-scaling:$TAG
+
+.PHONY: push-image
+push-image:
+	set -e
+	set -u
+	if [[ -z "${CIRCLE_TAG:-}" ]]; then
+	  echo "Pushing lastest for $CIRCLE_BRANCH..."
+	  TAG=latest
+	else
+	  echo "Pushing release $CIRCLE_TAG..."
+	  TAG="$CIRCLE_TAG"
+	fi
+	echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
+	docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$TAG
+	docker push mattermost/cloud-db-factory-vertical-scaling:$TAG
+
 .PHONY: install
 install: build
 	go install ./...
@@ -82,3 +107,8 @@ install: build
 release:
 	@echo Cut a release
 	sh ./scripts/release.sh
+
+.PHONY: deps
+deps:
+	sudo apt update && sudo apt install hub git
+	go get k8s.io/release/cmd/release-notes
