@@ -31,13 +31,8 @@ jobs:
     - checkout
     - setup_remote_docker
     - run: make build-image
-    - run: |
-        set -e
-        set -u
-        export TAG="${CIRCLE_SHA1:0:7}"
-        echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
-        docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$TAG
-        docker push mattermost/cloud-db-factory-vertical-scaling:$TAG
+    - run: make push-image-pr
+
 
   push-docker:
     executor:
@@ -46,19 +41,7 @@ jobs:
     - checkout
     - setup_remote_docker
     - run: make build-image
-    - run: |
-        set -e
-        set -u
-        if [[ -z "${CIRCLE_TAG:-}" ]]; then
-          echo "Pushing lastest for $CIRCLE_BRANCH..."
-          TAG=latest
-        else
-          echo "Pushing release $CIRCLE_TAG..."
-          TAG="$CIRCLE_TAG"
-        fi
-        echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
-        docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$TAG
-        docker push mattermost/cloud-db-factory-vertical-scaling:$TAG
+    - run: make push-image
 
   scan-image:
     docker:
@@ -79,6 +62,15 @@ jobs:
         path: gl-container-scanning-report.json
         destination: security-scan
 
+  release:
+    executor: default
+    steps:
+      - checkout
+      - run:
+          command: |
+            make deps
+            make release
+
 workflows:
   version: 2
   ci-build:
@@ -92,6 +84,14 @@ workflows:
         context: matterbuild-docker
         requires:
         - push-docker-pr
+  publish-github-release:
+    jobs:
+      - release:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /v[0-9]+(\.[0-9]+)*/
   master-build:
     jobs:
     - check-style:
