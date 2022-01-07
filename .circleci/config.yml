@@ -15,7 +15,6 @@ aliases:
       - "/go/pkg/mod"
 
 commands:
-
   install-docker-buildx:
     description: Install Docker Buildx
     steps:
@@ -50,9 +49,6 @@ jobs:
     - setup_remote_docker:
         version: 20.10.7
     - install-docker-buildx
-    - run: |
-        export DOCKER_CLI_EXPERIMENTAL=enabled
-        make build-image
     - run: make push-image-pr
 
 
@@ -64,9 +60,6 @@ jobs:
     - setup_remote_docker:
         version: 20.10.7
     - install-docker-buildx
-    - run: |
-        export DOCKER_CLI_EXPERIMENTAL=enabled
-        make build-image
     - run: make push-image
 
   scan-image:
