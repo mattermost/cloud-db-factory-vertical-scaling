@@ -67,6 +67,7 @@ build:
 .PHONY: build-image
 build-image:  ## Build the docker image for cloud-db-factory-vertical-scaling
 	@echo Building Cloud-DB-Factory-Vertical-Scaling Docker Image
+	echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
 	docker buildx build \
 	--platform linux/arm64,linux/amd64 \
 	--build-arg DOCKER_BUILD_IMAGE=$(DOCKER_BUILD_IMAGE) \
