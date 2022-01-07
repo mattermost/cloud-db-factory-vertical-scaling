@@ -78,27 +78,13 @@ build-image:  ## Build the docker image for cloud-db-factory-vertical-scaling
 
 .PHONY: push-image-pr
 push-image-pr:
-	set -e
-	set -u
-	export TAG="${CIRCLE_SHA1:0:7}"
-	echo $(DOCKER_PASSWORD) | docker login --username $(DOCKER_USERNAME) --password-stdin
-	docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$(TAG)
-	docker push mattermost/cloud-db-factory-vertical-scaling:$(TAG)
+	@echo Push Image PR
+	sh ./scripts/push-image-pr.sh
 
 .PHONY: push-image
 push-image:
-	set -e
-	set -u
-	if [[ -z "${CIRCLE_TAG:-}" ]]; then
-	  echo "Pushing lastest for $CIRCLE_BRANCH..."
-	  TAG=latest
-	else
-	  echo "Pushing release $CIRCLE_TAG..."
-	  TAG="$CIRCLE_TAG"
-	fi
-	echo $(DOCKER_PASSWORD) | docker login --username $(DOCKER_USERNAME) --password-stdin
-	docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$(TAG)
-	docker push mattermost/cloud-db-factory-vertical-scaling:$(TAG)
+	@echo Push Image
+	sh ./scripts/push-image.sh
 
 .PHONY: install
 install: build
