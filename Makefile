@@ -9,6 +9,7 @@ DOCKER_BASE_IMAGE = alpine:3.14
 ################################################################################
 
 GO ?= $(shell command -v go 2> /dev/null)
+CLOUD_DB_FACTORY_VERTICAL_SCALING_IMAGE_REPO ?=mattermost/cloud-db-factory-vertical-scaling
 CLOUD_DB_FACTORY_VERTICAL_SCALING_IMAGE ?= mattermost/cloud-db-factory-vertical-scaling:test
 MACHINE = $(shell uname -m)
 GOFLAGS ?= $(GOFLAGS:)
@@ -76,15 +77,26 @@ build-image:  ## Build the docker image for cloud-db-factory-vertical-scaling
 	--no-cache \
 	--push
 
+.PHONY: build-image-with-tag
+build-image-with-tag:  ## Build the docker image for cloud-db-factory-vertical-scaling
+	@echo Building Cloud-DB-Factory-Vertical-Scaling Docker Image
+	echo $(DOCKER_PASSWORD) | docker login --username $(DOCKER_USERNAME) --password-stdin
+	docker buildx build \
+	--platform linux/arm64,linux/amd64 \
+	--build-arg DOCKER_BUILD_IMAGE=$(DOCKER_BUILD_IMAGE) \
+	--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
+	. -f build/Dockerfile -t $(CLOUD_DB_FACTORY_VERTICAL_SCALING_IMAGE) -t $(CLOUD_DB_FACTORY_VERTICAL_SCALING_IMAGE_REPO):${TAG} \
+	--push
+
 .PHONY: push-image-pr
 push-image-pr:
 	@echo Push Image PR
-	sh ./scripts/push-image-pr.sh
+	bash ./scripts/push-image-pr.sh
 
 .PHONY: push-image
 push-image:
 	@echo Push Image
-	sh ./scripts/push-image.sh
+	bash ./scripts/push-image.sh
 
 .PHONY: install
 install: build
@@ -93,7 +105,7 @@ install: build
 .PHONY: release
 release:
 	@echo Cut a release
-	sh ./scripts/release.sh
+	bash ./scripts/release.sh
 
 .PHONY: deps
 deps:
