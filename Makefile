@@ -67,7 +67,7 @@ build:
 .PHONY: build-image
 build-image:  ## Build the docker image for cloud-db-factory-vertical-scaling
 	@echo Building Cloud-DB-Factory-Vertical-Scaling Docker Image
-	echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
+	echo $(DOCKER_PASSWORD) | docker login --username $(DOCKER_USERNAME) --password-stdin
 	docker buildx build \
 	--platform linux/arm64,linux/amd64 \
 	--build-arg DOCKER_BUILD_IMAGE=$(DOCKER_BUILD_IMAGE) \
@@ -81,9 +81,9 @@ push-image-pr:
 	set -e
 	set -u
 	export TAG="${CIRCLE_SHA1:0:7}"
-	echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
-	docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$TAG
-	docker push mattermost/cloud-db-factory-vertical-scaling:$TAG
+	echo $(DOCKER_PASSWORD) | docker login --username $(DOCKER_USERNAME) --password-stdin
+	docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$(TAG)
+	docker push mattermost/cloud-db-factory-vertical-scaling:$(TAG)
 
 .PHONY: push-image
 push-image:
@@ -96,9 +96,9 @@ push-image:
 	  echo "Pushing release $CIRCLE_TAG..."
 	  TAG="$CIRCLE_TAG"
 	fi
-	echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
-	docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$TAG
-	docker push mattermost/cloud-db-factory-vertical-scaling:$TAG
+	echo $(DOCKER_PASSWORD) | docker login --username $(DOCKER_USERNAME) --password-stdin
+	docker tag mattermost/cloud-db-factory-vertical-scaling:test mattermost/cloud-db-factory-vertical-scaling:$(TAG)
+	docker push mattermost/cloud-db-factory-vertical-scaling:$(TAG)
 
 .PHONY: install
 install: build
