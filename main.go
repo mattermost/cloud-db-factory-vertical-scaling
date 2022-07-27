@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,20 +46,6 @@ var DBInstanceClassMemory = map[string]string{
 	"db.r5.24xlarge": "824633720832",
 }
 
-// DBInstanceClassConnections maps DB instance types with their max connections
-var DBInstanceClassConnections = map[string]string{
-	"db.t3.medium":   "415",
-	"db.t3.large":    "683",
-	"db.r5.large":    "1675",
-	"db.r5.xlarge":   "3355",
-	"db.r5.2xlarge":  "6710",
-	"db.r5.4xlarge":  "13425",
-	"db.r5.8xlarge":  "26855",
-	"db.r5.12xlarge": "40285",
-	"db.r5.16xlarge": "53715",
-	"db.r5.24xlarge": "80575",
-}
-
 // DBInstanceGravitonClasses is used to store the available DB Graviton Instance Classes. The classes are specified with size order.
 var DBInstanceGravitonClasses = []string{
 	"db.t4g.small",
@@ -88,24 +75,6 @@ var DBInstanceGravitonClassMemory = map[string]string{
 	"db.r6g.16xlarge": "549755813888",
 	"db.r6g.24xlarge": "824633720832",
 }
-
-// DBInstanceGravitonClassConnections maps DB Graviton instance types with their max connections
-var DBInstanceGravitonClassConnections = map[string]string{
-	"db.t4g.small":    "225",
-	"db.t4g.medium":   "450",
-	"db.t4g.large":    "900",
-	"db.r6g.large":    "1722",
-	"db.r6g.xlarge":   "3479",
-	"db.r6g.2xlarge":  "6958",
-	"db.r6g.4xlarge":  "14420",
-	"db.r6g.8xlarge":  "28840",
-	"db.r6g.12xlarge": "43260",
-	"db.r6g.16xlarge": "57690",
-	"db.r6g.24xlarge": "86510",
-}
-
-var memoryCacheProportion = "0.75"
-var connectionsSafetyPercentage = "0.9"
 
 // SQSMessageBody is used to decode the SQS Message Body
 type SQSMessageBody struct {
@@ -169,7 +138,18 @@ type DBInstance struct {
 }
 
 func main() {
-	err := verticalScaling()
+
+	err := checkEnvVariables()
+	if err != nil {
+		log.WithError(err).Error("Environment variables were not set")
+		err = sendMattermostErrorNotification(err, "The Database Factory vertical scaling failed.")
+		if err != nil {
+			log.WithError(err).Error("Failed to send Mattermost error notification")
+		}
+		return
+	}
+
+	err = verticalScaling()
 	if err != nil {
 		log.WithError(err).Error("Failed to run database factory vertical scaling")
 		err = sendMattermostErrorNotification(err, "Τhe Database Factory vertical scaling failed")
@@ -177,6 +157,35 @@ func main() {
 			log.WithError(err).Error("Failed to send Mattermost error notification")
 		}
 	}
+}
+
+func checkEnvVariables() error {
+	var envVariables = []string{
+		"RDSMultitenantDBInstanceNamePrefix",
+		"Environment",
+		"MattermostNotificationsHook",
+		"MattermostAlertsHook",
+		"QueueURL",
+		"MemoryCacheProportion",
+		"ConnectionsSafetyPercentage",
+		"MemoryConnectionsDivider",
+	}
+
+	for _, envVar := range envVariables {
+		if os.Getenv(envVar) == "" {
+			return errors.Errorf("Environment variable %s was not set", envVar)
+		}
+	}
+
+	if _, err := strconv.ParseFloat(os.Getenv("ConnectionsSafetyPercentage"), 64); err == nil {
+		return errors.Wrap(err, "failed to parse float64 from ConnectionsSafetyPercentage string")
+	}
+
+	if _, err := strconv.ParseFloat(os.Getenv("MemoryConnectionsDivider"), 64); err == nil {
+		return errors.Wrap(err, "failed to parse float64 from MemoryConnectionsDivider string")
+	}
+
+	return nil
 }
 
 func verticalScaling() error {
@@ -236,14 +245,14 @@ func verticalScaling() error {
 
 		memoryAlarmName := fmt.Sprintf("%s-memory", dbInstance.DBInstanceIdentifier)
 		log.Infof("Updating Cloudwatch alarm (%s) with new metric", memoryAlarmName)
-		err = updateAlarm(cloudwatchClient, memoryAlarmName, newClass, dbInstance)
+		err = updateMemoryAlarm(cloudwatchClient, memoryAlarmName, newClass, dbInstance)
 		if err != nil {
 			return errors.Wrapf(err, "Failed to update Cloudwatch alarm (%s)", memoryAlarmName)
 		}
 
 		connectionsAlarmName := fmt.Sprintf("%s-connections", dbInstance.DBInstanceIdentifier)
 		log.Infof("Updating Cloudwatch alarm (%s) with new metric", connectionsAlarmName)
-		err = updateAlarm(cloudwatchClient, connectionsAlarmName, newClass, dbInstance)
+		err = updateConnectionsAlarm(cloudwatchClient, connectionsAlarmName, newClass, dbInstance)
 		if err != nil {
 			return errors.Wrapf(err, "Failed to update Cloudwatch alarm (%s)", connectionsAlarmName)
 		}
@@ -292,14 +301,14 @@ func verticalScaling() error {
 
 		memoryAlarmName := fmt.Sprintf("%s-memory", dbInstanceReader.DBInstanceIdentifier)
 		log.Infof("Updating Cloudwatch alarm (%s) with new metric", memoryAlarmName)
-		err = updateAlarm(cloudwatchClient, memoryAlarmName, newClass, dbInstance)
+		err = updateMemoryAlarm(cloudwatchClient, memoryAlarmName, newClass, dbInstance)
 		if err != nil {
 			return errors.Wrapf(err, "Failed to update Cloudwatch alarm (%s)", memoryAlarmName)
 		}
 
 		connectionsAlarmName := fmt.Sprintf("%s-connections", dbInstanceReader.DBInstanceIdentifier)
 		log.Infof("Updating Cloudwatch alarm (%s) with new metric", connectionsAlarmName)
-		err = updateAlarm(cloudwatchClient, connectionsAlarmName, newClass, dbInstance)
+		err = updateConnectionsAlarm(cloudwatchClient, connectionsAlarmName, newClass, dbInstance)
 		if err != nil {
 			return errors.Wrapf(err, "Failed to update Cloudwatch alarm (%s)", connectionsAlarmName)
 		}
@@ -319,7 +328,7 @@ func verticalScaling() error {
 	return nil
 }
 
-func updateAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string, dbInstance DBInstance) error {
+func updateMemoryAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string, dbInstance DBInstance) error {
 	alarms, err := client.DescribeAlarms(&cloudwatch.DescribeAlarmsInput{
 		AlarmNames: []*string{&alarmName},
 	})
@@ -327,7 +336,7 @@ func updateAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string,
 		return errors.Wrap(err, "Failed to describe Cloudwatch alarms")
 	}
 
-	newAlarm, err := updateAlarmMetric(alarms, instanceClass, dbInstance)
+	newAlarm, err := updateMemoryAlarmMetric(alarms, instanceClass, dbInstance)
 	if err != nil {
 		return errors.Wrap(err, "Failed to set data to new Cloudwatch alarm")
 	}
@@ -338,6 +347,15 @@ func updateAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string,
 		EvaluationPeriods:  newAlarm.EvaluationPeriods,
 		ComparisonOperator: newAlarm.ComparisonOperator,
 		Threshold:          newAlarm.Threshold,
+		MetricName:         newAlarm.MetricName,
+		Period:             newAlarm.Period,
+		Namespace:          newAlarm.Namespace,
+		Statistic:          newAlarm.Statistic,
+		TreatMissingData:   newAlarm.TreatMissingData,
+		AlarmDescription:   newAlarm.AlarmDescription,
+		Dimensions:         newAlarm.Dimensions,
+		DatapointsToAlarm:  newAlarm.DatapointsToAlarm,
+		AlarmActions:       newAlarm.AlarmActions,
 	})
 	if err != nil {
 		return errors.Wrap(err, "Failed to update Cloudwatch alarm")
@@ -345,28 +363,83 @@ func updateAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string,
 	return nil
 }
 
-func updateAlarmMetric(alarms *cloudwatch.DescribeAlarmsOutput, instanceClass string, dbInstance DBInstance) (*cloudwatch.MetricAlarm, error) {
+func updateConnectionsAlarm(client *cloudwatch.CloudWatch, alarmName, instanceClass string, dbInstance DBInstance) error {
+	alarms, err := client.DescribeAlarms(&cloudwatch.DescribeAlarmsInput{
+		AlarmNames: []*string{&alarmName},
+	})
+	if err != nil {
+		return errors.Wrap(err, "Failed to describe Cloudwatch alarms")
+	}
+
+	newAlarm, err := updateConnectionsAlarmMetric(alarms, instanceClass, dbInstance)
+	if err != nil {
+		return errors.Wrap(err, "Failed to set data to new Cloudwatch alarm")
+	}
+
+	_, err = client.PutMetricAlarm(&cloudwatch.PutMetricAlarmInput{
+		AlarmName:          aws.String(alarmName),
+		Metrics:            newAlarm.Metrics,
+		EvaluationPeriods:  newAlarm.EvaluationPeriods,
+		ComparisonOperator: newAlarm.ComparisonOperator,
+		Threshold:          newAlarm.Threshold,
+		MetricName:         newAlarm.MetricName,
+		Period:             newAlarm.Period,
+		Namespace:          newAlarm.Namespace,
+		Statistic:          newAlarm.Statistic,
+		TreatMissingData:   newAlarm.TreatMissingData,
+		AlarmDescription:   newAlarm.AlarmDescription,
+		Dimensions:         newAlarm.Dimensions,
+		DatapointsToAlarm:  newAlarm.DatapointsToAlarm,
+		AlarmActions:       newAlarm.AlarmActions,
+	})
+	if err != nil {
+		return errors.Wrap(err, "Failed to update Cloudwatch alarm")
+	}
+	return nil
+}
+
+func updateMemoryAlarmMetric(alarms *cloudwatch.DescribeAlarmsOutput, instanceClass string, dbInstance DBInstance) (*cloudwatch.MetricAlarm, error) {
 	if len(alarms.MetricAlarms) > 0 {
 		for _, metricAlarm := range alarms.MetricAlarms {
 			if len(metricAlarm.Metrics) > 0 {
-				if *metricAlarm.MetricName == "DatabaseConnections" {
-					if dbInstance.IsArm {
-						metricAlarm.Metrics[0].Expression = aws.String(fmt.Sprintf("%s*%s", connectionsSafetyPercentage, DBInstanceGravitonClassConnections[instanceClass]))
-						return metricAlarm, nil
-					}
-					metricAlarm.Metrics[0].Expression = aws.String(fmt.Sprintf("%s*%s", connectionsSafetyPercentage, DBInstanceClassConnections[instanceClass]))
-					return metricAlarm, nil
-				}
 				for index, metric := range metricAlarm.Metrics {
 					if *metric.Id == "e1" {
 						if dbInstance.IsArm {
-							metricAlarm.Metrics[index].Expression = aws.String(fmt.Sprintf("m1 + %s*%s", memoryCacheProportion, DBInstanceGravitonClassMemory[instanceClass]))
+							metricAlarm.Metrics[index].Expression = aws.String(fmt.Sprintf("m1 + %s*%s", os.Getenv("MemoryCacheProportion"), DBInstanceGravitonClassMemory[instanceClass]))
 							return metricAlarm, nil
 						}
-						metricAlarm.Metrics[index].Expression = aws.String(fmt.Sprintf("m1 + %s*%s", memoryCacheProportion, DBInstanceClassMemory[instanceClass]))
+						metricAlarm.Metrics[index].Expression = aws.String(fmt.Sprintf("m1 + %s*%s", os.Getenv("MemoryCacheProportion"), DBInstanceClassMemory[instanceClass]))
 						return metricAlarm, nil
 					}
 				}
+			}
+		}
+	}
+	return nil, errors.Errorf("Failed to get existing alarms")
+}
+
+func updateConnectionsAlarmMetric(alarms *cloudwatch.DescribeAlarmsOutput, instanceClass string, dbInstance DBInstance) (*cloudwatch.MetricAlarm, error) {
+
+	connectionsSafetyPercentage, _ := strconv.ParseFloat(os.Getenv("ConnectionsSafetyPercentage"), 64)
+	divider, _ := strconv.ParseFloat(os.Getenv("MemoryConnectionsDivider"), 64)
+
+	if len(alarms.MetricAlarms) > 0 {
+		for _, metricAlarm := range alarms.MetricAlarms {
+			if *metricAlarm.MetricName == "DatabaseConnections" {
+				if dbInstance.IsArm {
+					memoryFloat, err := strconv.ParseFloat(DBInstanceGravitonClassMemory[instanceClass], 64)
+					if err != nil {
+						return nil, errors.Wrap(err, "unable to change memory to float number")
+					}
+					metricAlarm.Threshold = aws.Float64(connectionsSafetyPercentage * (memoryFloat / divider))
+					return metricAlarm, nil
+				}
+				memoryFloat, err := strconv.ParseFloat(DBInstanceClassMemory[instanceClass], 64)
+				if err != nil {
+					return nil, errors.Wrap(err, "unable to change memory to float number")
+				}
+				metricAlarm.Threshold = aws.Float64(connectionsSafetyPercentage * (memoryFloat / divider))
+				return metricAlarm, nil
 			}
 		}
 	}
